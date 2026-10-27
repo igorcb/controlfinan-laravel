@@ -1,4 +1,5 @@
-# Production image: minified Tailwind CSS, PHP-FPM (static pool) behind nginx, OPcache and Laravel caches.
+# Production image: Laravel Octane on FrankenPHP. The app stays in memory between requests
+# (like Puma and Gunicorn), with OPcache and the config, route and view caches.
 FROM python:3.12-slim AS css
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && curl -fsSL -o /usr/local/bin/tailwindcss \
@@ -15,20 +16,15 @@ RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction --pr
 COPY . .
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
-FROM php:8.4-fpm-alpine
-RUN apk add --no-cache nginx libpq \
-    && apk add --no-cache --virtual .build-deps postgresql-dev \
-    && docker-php-ext-install pdo_pgsql bcmath opcache \
-    && apk del .build-deps \
+FROM dunglas/frankenphp:1-php8.4-alpine
+RUN install-php-extensions pdo_pgsql bcmath opcache pcntl \
     && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY docker/opcache.ini $PHP_INI_DIR/conf.d/opcache.ini
-COPY docker/www.conf /usr/local/etc/php-fpm.d/www.conf
-COPY docker/nginx.conf /etc/nginx/nginx.conf
-COPY docker/start.sh /usr/local/bin/start
 WORKDIR /app
 COPY --from=vendor /app /app
 COPY --from=css /app/public/css/app.css /app/public/css/app.css
-RUN rm -f .env && chown -R www-data:www-data storage bootstrap/cache && chmod +x /usr/local/bin/start
-ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr LOG_LEVEL=warning SESSION_DRIVER=cookie CACHE_STORE=file
+RUN rm -f .env
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr LOG_LEVEL=warning SESSION_DRIVER=cookie CACHE_STORE=file \
+    OCTANE_SERVER=frankenphp
 EXPOSE 8000
-CMD ["start"]
+CMD ["sh", "-c", "php artisan migrate --force && php artisan config:cache && php artisan route:cache && php artisan view:cache && exec php artisan octane:frankenphp --host=0.0.0.0 --port=8000 --workers=${OCTANE_WORKERS:-2} --max-requests=1000000 --log-level=warn"]

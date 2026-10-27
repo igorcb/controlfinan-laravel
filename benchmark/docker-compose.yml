@@ -1,4 +1,4 @@
-# Rails 8 + Hotwire x Django x Laravel, all in production mode with the same limits and the same data.
+# Rails 8 + Hotwire x Django x Laravel (Octane), all in production mode with the same limits and the same data.
 # Run with ./benchmark/run.sh (it reads the Rails master key from the Rails repo; nothing secret is stored here).
 x-db: &db
   image: postgres:16-alpine
@@ -18,14 +18,12 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
       POSTGRES_DB: controlfinan_django
-  laravel-db: &laravel-db
+  laravel-db:
     <<: *db
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
       POSTGRES_DB: controlfinan_laravel
-  octane-db:
-    <<: *laravel-db
 
   rails:
     build: ${RAILS_APP:-../../controlfinan-rails8-hotwire}
@@ -78,33 +76,12 @@ services:
       DB_USERNAME: app
       DB_PASSWORD: app
       BCRYPT_ROUNDS: 12
-      # One PHP-FPM process per CPU. Puma and Gunicorn run 2 processes x 5 threads, but the GVL/GIL lets only
-      # 2 requests use the CPU at a time; 10 PHP workers on 2 CPUs were 4x slower (CPU throttling, see README).
-      PHP_WORKERS: 2
-      DB_PERSISTENT: "true"
+      # Octane keeps the app in memory, like Puma and Gunicorn. One worker per CPU (Octane's default): Puma and
+      # Gunicorn run 2 processes x 5 threads, but the GVL/GIL lets only 2 requests use the CPU at a time;
+      # 10 PHP workers on 2 CPUs were 4x slower (CPU throttling, see README).
+      OCTANE_WORKERS: 2
     ports: ["8102:8000"]
     depends_on: [laravel-db]
-
-  octane:
-    build:
-      context: ..
-      dockerfile: Dockerfile.octane
-    image: bench-octane
-    cpus: 2
-    mem_limit: 1g
-    environment:
-      APP_KEY: base64:qjPCQP/5F4TqTUFkvvR1ubtYMdxVsz/VHUulhBRStxY=  # benchmark-only key
-      APP_URL: http://octane:8000
-      DB_CONNECTION: pgsql
-      DB_HOST: octane-db
-      DB_DATABASE: controlfinan_laravel
-      DB_USERNAME: app
-      DB_PASSWORD: app
-      BCRYPT_ROUNDS: 12
-      # Octane keeps the app in memory; one worker per CPU (Octane's default), like PHP-FPM above.
-      OCTANE_WORKERS: 2
-    ports: ["8103:8000"]
-    depends_on: [octane-db]
 
   k6:
     image: grafana/k6:0.54.0

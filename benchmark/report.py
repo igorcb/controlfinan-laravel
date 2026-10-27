@@ -10,10 +10,9 @@ ROOT = Path(__file__).resolve().parent.parent
 APPS = {
     "rails": "Rails 8.1 + Hotwire (Puma)",
     "django": "Django 5.2 (Gunicorn)",
-    "laravel": "Laravel 12 (PHP-FPM + nginx)",
-    "octane": "Laravel 12 + Octane (FrankenPHP)",
+    "laravel": "Laravel 12 + Octane (FrankenPHP)",
 }
-NAMES = {"rails": "Rails", "django": "Django", "laravel": "Laravel FPM", "octane": "Laravel Octane"}
+NAMES = {"rails": "Rails", "django": "Django", "laravel": "Laravel"}
 PAGES = {
     "lista": "Conta Corrente (30 itens + saldo)",
     "dia": "Saldo do dia (filtro)",
@@ -35,13 +34,11 @@ CODE = {
         "app/**/*.php", "resources/views/**/*.blade.php", "public/js/*.js", "resources/css/*.css", "routes/web.php",
     ], []),
 }
-CODE["octane"] = CODE["laravel"]
 TESTS = {
     "rails": (ROOT.parent / "controlfinan-rails8-hotwire", ["test/**/*.rb", "spec/**/*.rb"]),
     "django": (ROOT.parent / "controlfinan-django", ["tests/*.py"]),
     "laravel": (ROOT, ["tests/**/*.php"]),
 }
-TESTS["octane"] = TESTS["laravel"]
 
 
 def mib(text):
@@ -96,7 +93,7 @@ def main():
     out = ["# Benchmark: ControlFinan em " + " x ".join(NAMES[a] for a in apps), ""]
     out += [
         "Mesmo app (paridade de telas e regras), mesmos dados, modo produção.",
-        "Puma e Gunicorn: 2 processos × 5 threads (com GVL/GIL, até 2 requisições usam CPU ao mesmo tempo); PHP-FPM e Octane: 2 workers, um por CPU.",
+        "Puma e Gunicorn: 2 processos × 5 threads (com GVL/GIL, até 2 requisições usam CPU ao mesmo tempo); Laravel Octane: 2 workers, um por CPU.",
         "Cada app limitado a 2 CPUs e 1 GB de RAM, com o seu Postgres 16 (2 CPUs, 1 GB).",
         "Carga: k6 com 20 usuários simultâneos, 10 s de aquecimento + 30 s medidos por tela, logado de verdade.",
         "",

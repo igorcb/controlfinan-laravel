@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Rails 8 + Hotwire x Django x Laravel (PHP-FPM and Octane) benchmark.
-# Usage: ./benchmark/run.sh [apps...] (default: rails django laravel octane)
+# Rails 8 + Hotwire x Django x Laravel (Octane) benchmark.
+# Usage: ./benchmark/run.sh [apps...] (default: rails django laravel)
 # Needs ../controlfinan-rails8-hotwire (with its dev database running, which provides the shared data:
 # benchmark@exemplo.com and its entries) and ../controlfinan-django next to this repo.
 set -euo pipefail
@@ -10,7 +10,7 @@ DJANGO_APP="$(cd ../../controlfinan-django && pwd)"
 export RAILS_APP DJANGO_APP
 RAILS_MASTER_KEY="$(cat "$RAILS_APP/config/master.key")"
 export RAILS_MASTER_KEY
-APPS=("${@:-rails django laravel octane}")
+APPS=("${@:-rails django laravel}")
 read -r -a APPS <<< "${APPS[*]}"
 RESULTS=results
 mkdir -p "$RESULTS"
@@ -40,7 +40,6 @@ for app in "${APPS[@]}"; do
     rails) port=3101; inner=3000; dbname=app_production ;;
     django) port=8101; inner=8000; dbname=controlfinan_django ;;
     laravel) port=8102; inner=8000; dbname=controlfinan_laravel ;;
-    octane) port=8103; inner=8000; dbname=controlfinan_laravel ;;
   esac
   db="$app-db"
   echo "== $app"

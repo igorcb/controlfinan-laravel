@@ -56,47 +56,43 @@ Cada usuário só enxerga os próprios lançamentos.
 Mesmo app, mesmos dados e todos em **modo produção**:
 
 - **Rails 8.1** com Puma (Ruby 3.4 + YJIT) e **Django 5.2** com Gunicorn `gthread` (Python 3.12): 2 processos × 5 threads cada.
-- **Laravel 12** (PHP 8.4 + OPcache) de dois jeitos:
-  - **Laravel FPM**: PHP-FPM + nginx, o jeito mais comum de rodar PHP. O app é carregado a cada requisição.
-  - **Laravel Octane**: FrankenPHP, que mantém o app na memória entre requisições, como Puma e Gunicorn.
-  - Nos dois, 2 workers (um por CPU) e conexões persistentes com o banco.
+- **Laravel 12** com **Octane + FrankenPHP** (PHP 8.4 + OPcache): o app fica na memória entre requisições, como no Puma e no Gunicorn. São 2 workers (um por CPU) com conexões persistentes ao banco.
 - Cada app limitado a **2 CPUs e 1 GB de RAM**, cada um com o seu Postgres 16 (2 CPUs, 1 GB).
 - Carga com **k6**: 20 usuários simultâneos, logados de verdade pelo formulário de login, 10 s de aquecimento e 30 s medidos por tela.
 
 ### Requisições por segundo (mais é melhor)
 
-| Tela | Rails | Django | Laravel FPM | Laravel Octane |
-|---|---:|---:|---:|---:|
-| Conta Corrente (30 itens + saldo) | 101 | 76 | 112 | **115** |
-| Saldo do dia (filtro) | **236** | 140 | 181 | 221 |
-| Dashboard do mês | 160 | 154 | 175 | **220** |
-| API JSON (30 itens) | **315** | 213 | 160 | 210 |
-| Criar lançamento (POST) | **404** | 314 | 195 | 307 |
+| Tela | Rails | Django | Laravel |
+|---|---:|---:|---:|
+| Conta Corrente (30 itens + saldo) | 101 | 76 | **115** |
+| Saldo do dia (filtro) | **236** | 140 | 221 |
+| Dashboard do mês | 160 | 154 | **220** |
+| API JSON (30 itens) | **315** | 213 | 210 |
+| Criar lançamento (POST) | **404** | 314 | 307 |
 
 Nenhuma requisição falhou. Latências, CPU e memória de cada tela estão em [benchmark/results/RESULTS.md](benchmark/results/RESULTS.md).
 
 ### Recursos
 
-| | Rails | Django | Laravel FPM | Laravel Octane |
-|---|---:|---:|---:|---:|
-| Subir até responder `/up` (inclui migrations) | 5,3 s | 2,7 s | **1,8 s** | 2,0 s |
-| Memória parado | 125 MiB | 82 MiB | **32 MiB** | 81 MiB |
-| Memória no pico da carga | ~300 MiB | ~106 MiB | **39 MiB** | ~102 MiB |
-| Tamanho da imagem Docker | 515 MB | 168 MB | **125 MB** | 224 MB |
+| | Rails | Django | Laravel |
+|---|---:|---:|---:|
+| Subir até responder `/up` (inclui migrations) | 5,3 s | 2,7 s | **2,0 s** |
+| Memória parado | 125 MiB | 82 MiB | **81 MiB** |
+| Memória no pico da carga | ~300 MiB | ~106 MiB | **~102 MiB** |
+| Tamanho da imagem Docker | 515 MB | **168 MB** | 224 MB |
 
 ### O que os números mostram
 
 - **Rails venceu 3 de 5 telas**, com folga nas mais leves (JSON e POST), em que o custo fixo de cada requisição pesa mais.
-- **Laravel Octane venceu 2 de 5** (lista e dashboard) e ficou perto do Rails no filtro por dia. Manter o app em memória rendeu de 3% a 57% a mais que o PHP-FPM.
-- **Laravel FPM** ficou atrás nas telas leves, mas usa de 3 a 8 vezes menos memória que os outros e tem a menor imagem.
-- **Django** ficou em último nas telas, mas segue econômico em memória.
+- **Laravel venceu 2 de 5** (lista e dashboard) e ficou perto do Rails no filtro por dia, usando um terço da memória do Rails.
+- **Django** ficou atrás nas telas, mas é o mais leve em imagem e quase empata com o Laravel em memória.
 
 ### Lições de medição
 
 Os primeiros números do Laravel estavam errados, de duas formas:
 
-1. **Conexão com o banco a cada requisição.** No PHP-FPM, cada requisição abria uma conexão nova com o Postgres, e a autenticação SCRAM custava ~15 ms de CPU. Rails e Django reaproveitam conexões. A correção foi usar `PDO::ATTR_PERSISTENT` (`DB_PERSISTENT=true`).
-2. **Workers demais para a CPU.** Com 10 workers em 2 CPUs, como os "2 × 5" do Rails e do Django, o Laravel caiu para ~50 req/s, tanto no FPM quanto no Octane. O CPU por requisição subiu de ~9 ms para ~32 ms com o container sendo estrangulado pelo limite de CPU. No Ruby e no Python isso não acontece: o GVL/GIL deixa só 2 requisições usarem CPU ao mesmo tempo. Com **2 workers** (um por CPU, o padrão do Octane), o mesmo app foi de 3 a 4 vezes mais rápido.
+1. **Conexão com o banco a cada requisição.** No PHP-FPM, cada requisição abria uma conexão nova com o Postgres, e a autenticação SCRAM custava ~15 ms de CPU. Rails e Django reaproveitam conexões. A correção foi usar conexão persistente (`DB_PERSISTENT=true`). Depois o app passou a usar o Octane, que mantém a conexão aberta.
+2. **Workers demais para a CPU.** Com 10 workers em 2 CPUs, como os "2 × 5" do Rails e do Django, o Laravel caiu para ~50 req/s. O CPU por requisição subiu de ~9 ms para ~32 ms com o container sendo estrangulado pelo limite de CPU. No Ruby e no Python isso não acontece: o GVL/GIL deixa só 2 requisições usarem CPU ao mesmo tempo. Com **2 workers** (um por CPU, o padrão do Octane), o mesmo app foi 4 vezes mais rápido.
 
 O Django também teve a sua lição: o primeiro resultado do Rails saiu errado por causa de um token CSRF no script de teste. **Meça, desconfie e confira.**
 
@@ -105,8 +101,8 @@ O Django também teve a sua lição: o primeiro resultado do Rails saiu errado p
 ```bash
 # Requisitos: este repositório, ../controlfinan-rails8-hotwire (com o banco de desenvolvimento no ar,
 # que fornece os dados) e ../controlfinan-django.
-./benchmark/run.sh                  # os quatro: rails django laravel octane
-./benchmark/run.sh laravel octane   # só alguns; os resultados dos outros são mantidos
+./benchmark/run.sh           # os três: rails django laravel
+./benchmark/run.sh laravel   # só alguns; os resultados dos outros são mantidos
 ```
 
 O relatório é gravado em `benchmark/results/RESULTS.md`.
@@ -120,10 +116,7 @@ docker compose up               # app em http://localhost:8002
 
 O container de desenvolvimento instala as dependências, compila o Tailwind em modo watch, roda as migrations e sobe o servidor.
 
-Imagens de produção:
-
-- `Dockerfile.prod`: PHP-FPM + nginx, OPcache e caches de config, rotas e views. Configure `APP_KEY`, `DB_*`, `PHP_WORKERS` (padrão 2) e `DB_PERSISTENT=true`.
-- `Dockerfile.octane`: Laravel Octane com FrankenPHP. Configure `OCTANE_WORKERS` (padrão 2).
+Imagem de produção: `Dockerfile.prod`, com Laravel Octane + FrankenPHP, OPcache e caches de config, rotas e views. Configure `APP_KEY`, `DB_*` e `OCTANE_WORKERS` (padrão 2).
 
 ## Testes
 
