@@ -13,7 +13,7 @@ Esta é a versão em **Laravel** do [ControlFinan em Rails 8 + Hotwire](https://
 
 - [Funcionalidades](#funcionalidades)
 - [Como a paridade foi feita](#como-a-paridade-foi-feita)
-- [Benchmark: Rails x Django x Laravel](#benchmark-rails-x-django-x-laravel)
+- [Benchmark](#benchmark)
 - [Como rodar com Docker](#como-rodar-com-docker)
 - [Testes](#testes)
 - [Estrutura](#estrutura)
@@ -51,61 +51,9 @@ Cada usuário só enxerga os próprios lançamentos.
 - JSON idêntico byte a byte (lista e detalhe).
 - **14 telas idênticas pixel a pixel**: login, lista, filtro, dashboard, novo, detalhe e edição, no computador (1280 px) e no celular (390 px).
 
-## Benchmark: Rails x Django x Laravel
+## Benchmark
 
-Mesmo app, mesmos dados e todos em **modo produção**:
-
-- **Rails 8.1** com Puma (Ruby 3.4 + YJIT) e **Django 5.2** com Gunicorn `gthread` (Python 3.12): 2 processos × 5 threads cada.
-- **Laravel 12** com **Octane + FrankenPHP** (PHP 8.4 + OPcache): o app fica na memória entre requisições, como no Puma e no Gunicorn. São 2 workers (um por CPU) com conexões persistentes ao banco.
-- Cada app limitado a **2 CPUs e 1 GB de RAM**, cada um com o seu Postgres 16 (2 CPUs, 1 GB).
-- Carga com **k6**: 20 usuários simultâneos, logados de verdade pelo formulário de login, 10 s de aquecimento e 30 s medidos por tela.
-
-### Requisições por segundo (mais é melhor)
-
-| Tela | Rails | Django | Laravel |
-|---|---:|---:|---:|
-| Conta Corrente (30 itens + saldo) | 101 | 76 | **115** |
-| Saldo do dia (filtro) | **236** | 140 | 221 |
-| Dashboard do mês | 160 | 154 | **220** |
-| API JSON (30 itens) | **315** | 213 | 210 |
-| Criar lançamento (POST) | **404** | 314 | 307 |
-
-Nenhuma requisição falhou. Latências, CPU e memória de cada tela estão em [benchmark/results/RESULTS.md](benchmark/results/RESULTS.md).
-
-### Recursos
-
-| | Rails | Django | Laravel |
-|---|---:|---:|---:|
-| Subir até responder `/up` (inclui migrations) | 5,3 s | 2,7 s | **2,0 s** |
-| Memória parado | 125 MiB | 82 MiB | **81 MiB** |
-| Memória no pico da carga | ~300 MiB | ~106 MiB | **~102 MiB** |
-| Tamanho da imagem Docker | 515 MB | **168 MB** | 224 MB |
-
-### O que os números mostram
-
-- **Rails venceu 3 de 5 telas**, com folga nas mais leves (JSON e POST), em que o custo fixo de cada requisição pesa mais.
-- **Laravel venceu 2 de 5** (lista e dashboard) e ficou perto do Rails no filtro por dia, usando um terço da memória do Rails.
-- **Django** ficou atrás nas telas, mas é o mais leve em imagem e quase empata com o Laravel em memória.
-
-### Lições de medição
-
-Os primeiros números do Laravel estavam errados, de duas formas:
-
-1. **Conexão com o banco a cada requisição.** No PHP-FPM, cada requisição abria uma conexão nova com o Postgres, e a autenticação SCRAM custava ~15 ms de CPU. Rails e Django reaproveitam conexões. A correção foi usar conexão persistente (`DB_PERSISTENT=true`). Depois o app passou a usar o Octane, que mantém a conexão aberta.
-2. **Workers demais para a CPU.** Com 10 workers em 2 CPUs, como os "2 × 5" do Rails e do Django, o Laravel caiu para ~50 req/s. O CPU por requisição subiu de ~9 ms para ~32 ms com o container sendo estrangulado pelo limite de CPU. No Ruby e no Python isso não acontece: o GVL/GIL deixa só 2 requisições usarem CPU ao mesmo tempo. Com **2 workers** (um por CPU, o padrão do Octane), o mesmo app foi 4 vezes mais rápido.
-
-O Django também teve a sua lição: o primeiro resultado do Rails saiu errado por causa de um token CSRF no script de teste. **Meça, desconfie e confira.**
-
-### Como reproduzir
-
-```bash
-# Requisitos: este repositório, ../controlfinan-rails8-hotwire (com o banco de desenvolvimento no ar,
-# que fornece os dados) e ../controlfinan-django.
-./benchmark/run.sh           # os três: rails django laravel
-./benchmark/run.sh laravel   # só alguns; os resultados dos outros são mantidos
-```
-
-O relatório é gravado em `benchmark/results/RESULTS.md`.
+O benchmark que compara as seis versões do ControlFinan (Rails, Django, Laravel, Go, Java e Rust), com os mesmos dados e os mesmos limites de CPU e memória, fica no repositório do app de referência: [controlfinan-rails8-hotwire/benchmark](https://github.com/igorcb/controlfinan-rails8-hotwire/tree/main/benchmark).
 
 ## Como rodar com Docker
 
@@ -137,7 +85,6 @@ app/
   Models/               User, Session, CurrentAccount
   Support/              Auth (cookie session_id) e Format (moeda e decimais como no Rails)
 resources/views/        Blade com o mesmo HTML do app Rails
-benchmark/              docker-compose, k6, run.sh e report.py
 tests/                  Pest
 ```
 
