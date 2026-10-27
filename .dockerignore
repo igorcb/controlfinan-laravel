@@ -1,0 +1,11 @@
+vendor
+node_modules
+.env
+storage/logs/*
+storage/framework/views/*
+storage/framework/sessions/*
+storage/framework/cache/data/*
+.git
+public/css/app.css
+bootstrap/cache/*.php
+frankenphp

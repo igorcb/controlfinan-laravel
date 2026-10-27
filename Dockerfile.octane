@@ -1,0 +1,30 @@
+# Production image with Laravel Octane on FrankenPHP: the app stays in memory between requests
+# (like Puma and Gunicorn), instead of booting on every request as with PHP-FPM.
+FROM python:3.12-slim AS css
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL -o /usr/local/bin/tailwindcss \
+       https://github.com/tailwindlabs/tailwindcss/releases/download/v4.3.3/tailwindcss-linux-x64 \
+    && chmod +x /usr/local/bin/tailwindcss
+WORKDIR /app
+COPY resources ./resources
+RUN tailwindcss -i resources/css/app.css -o public/css/app.css --minify
+
+FROM composer:2.8 AS vendor
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction --prefer-dist
+COPY . .
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
+
+FROM dunglas/frankenphp:1-php8.4-alpine
+RUN install-php-extensions pdo_pgsql bcmath opcache pcntl \
+    && mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+COPY docker/opcache.ini $PHP_INI_DIR/conf.d/opcache.ini
+WORKDIR /app
+COPY --from=vendor /app /app
+COPY --from=css /app/public/css/app.css /app/public/css/app.css
+RUN rm -f .env
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr LOG_LEVEL=warning SESSION_DRIVER=cookie CACHE_STORE=file \
+    OCTANE_SERVER=frankenphp
+EXPOSE 8000
+CMD ["sh", "-c", "php artisan migrate --force && php artisan config:cache && php artisan route:cache && php artisan view:cache && exec php artisan octane:frankenphp --host=0.0.0.0 --port=8000 --workers=${OCTANE_WORKERS:-2} --max-requests=1000000 --log-level=warn"]
